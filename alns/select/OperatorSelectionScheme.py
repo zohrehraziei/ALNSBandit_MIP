@@ -3,9 +3,10 @@ from typing import Optional, Tuple
 
 import numpy as np
 from numpy.random import RandomState
-
 from alns.Outcome import Outcome
 from alns.State import State
+
+
 
 
 class OperatorSelectionScheme(ABC):

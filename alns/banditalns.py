@@ -5,12 +5,12 @@ import numpy.random as rnd
 import pyscipopt as scip
 import matplotlib.pyplot as plt
 
-from alns.ALNS import ALNS
-from mip_config import MIPConfig
+from State import StateSCIP, ContextualState
 from alns.select import MABSelector
+from alns.ALNS import ALNS
 from alns.accept import HillClimbing
 from alns.stop import MaxIterations
-from State import StateSCIP
+from mip_config import MIPConfig
 from mabwiser.mab import LearningPolicy, NeighborhoodPolicy
 
 logger = logging.getLogger(__name__)
@@ -34,43 +34,41 @@ def random_remove(state: StateSCIP, rnd_state):
 
 
 def worse_remove(state: StateSCIP, rnd_state) -> StateSCIP:
-    # Copy the model's variables and create a new solution
+    # Copy the model's variables
     vars = state.model.getVars()
-    sol = state.model.createSol()
 
     # If there is no solution, remove anything
     if vars is None or len(vars) == 0:
         return state
 
     # Identify variables that contribute least to the objective function
-    ones = [(var, var.getObj()) for var in vars if state.model.getSolVal(sol, var) == 1 and var.getLbLocal() != var.getUbLocal()]
+    ones = [(var, var.getObj()) for var in vars if var.getLbLocal() != var.getUbLocal()]
     ones.sort(key=lambda x: x[1])  # sort by coefficient
     to_remove = [var for var, _ in ones[:int(len(ones) * 0.2)]]  # remove 20% vars with small coefficient
 
     for var in to_remove:
         if var.getLbLocal() == 0:  # Check if variable cannot be set to zero
             continue
-        state.model.setSolVal(sol, var, 0)
+        state.model.fixVar(var, 0.0)  # Fix variable to 0 in the solution
 
     return StateSCIP(state.model)
 
 
 def random_repair(state: StateSCIP, rnd_state) -> StateSCIP:
-    # Copy the model's variables and create a new solution
+    # Copy the model's variables
     vars = state.model.getVars()
-    sol = state.model.createSol()
 
     # If there is no solution, we cannot repair anything
     if vars is None or len(vars) == 0:
         return state
 
-    zeros = [var for var in vars if state.model.getSolVal(sol, var) == 0 and var.getLbLocal() != var.getUbLocal()]
+    zeros = [var for var in vars if var.getLbLocal() != var.getUbLocal() and state.model.getSolVal(None, var) == 0]
 
     # Randomly choose a variable from the zeros list
     chosen_var = rnd_state.choice(zeros)
 
     # Set the chosen variable to 1 in the solution
-    state.model.setSolVal(sol, chosen_var, 1)
+    state.model.setSolVal(None, chosen_var, 1.0)
 
     return StateSCIP(state.model)
 
@@ -127,29 +125,26 @@ def init_sol(model):
 def run_banditalns(instance_path):
     SEED = 7654
     random_state = np.random.RandomState(SEED)
+    logger.info(f"Running BanditALNS for instance: {instance_path}")
+
+    mip_instance = read_mps(instance_path)
+
+
+    # Initialize ALNS with random state
+    initial_sol = init_sol(model=mip_instance)
+
     alns = ALNS(random_state)
 
     alns.add_destroy_operator(random_remove)
     alns.add_destroy_operator(worse_remove)
     alns.add_repair_operator(random_repair)
 
-
-    logger.info(f"Running BanditALNS for instance: {instance_path}")
-
-    mip_instance = read_mps(instance_path)
-    initial_state = StateSCIP(mip_instance)
-    StateSCIP.get_context = StateSCIP.get_context
-
-
-    # Initialize ALNS with random state
-    initial_sol = init_sol(model=mip_instance)
-
     if initial_sol is None:
         logger.error("failed to initialize solution within time limit")
         return
 
-    def get_context(state):
-        return StateSCIP.get_context()
+
+    StateSCIP.get_context = StateSCIP.get_mip_context
 
     op_select = MABSelector(
         scores=MIPConfig.scores,
@@ -169,7 +164,7 @@ def run_banditalns(instance_path):
 
 
 if __name__ == "__main__":
-    instance_path = "C:/Users/a739095/Streamfolder/Forked_ALNS_CMAB_MIP/ALNS/data/gen-ip002.mps.gz"
+    instance_path = "C:/Users/a739095/Streamfolder/New_Forked_ALNS_CMAB_MIP/ALNSBandit_MIP/data/gen-ip002.mps.gz"
     # Create MIP instance
     run_banditalns(instance_path)
 

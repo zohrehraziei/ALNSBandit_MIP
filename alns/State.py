@@ -2,6 +2,7 @@ from typing import Protocol
 
 import numpy as np
 from pandas import DataFrame
+import pyscipopt as scip
 
 
 class State(Protocol):
