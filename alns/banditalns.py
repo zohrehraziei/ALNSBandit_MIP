@@ -3,7 +3,7 @@ import logging
 import numpy as np
 import numpy.random as rnd
 import pyscipopt as scip
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 from State import StateSCIP, ContextualState
 from alns.select import MABSelector
@@ -17,8 +17,10 @@ logger = logging.getLogger(__name__)
 
 
 def random_remove(state: StateSCIP, rnd_state):
-    # Copy the model's variables and create a new solution
+    # Copy the model's variables
     vars = state.model.getVars()
+
+    # Create a new SCIP solution
     sol = state.model.createSol()
 
     # Randomly select a fraction of variables set to 1 and unset them
@@ -30,16 +32,19 @@ def random_remove(state: StateSCIP, rnd_state):
             continue
         state.model.setSolVal(sol, var, 0)
 
-    return StateSCIP(state.model)
+    return sol
 
 
-def worse_remove(state: StateSCIP, rnd_state) -> StateSCIP:
+def worse_remove(state: StateSCIP, rnd_state):
     # Copy the model's variables
     vars = state.model.getVars()
 
     # If there is no solution, remove anything
     if vars is None or len(vars) == 0:
-        return state
+        return state.model.createSol()
+
+    # Create a new SCIP solution
+    sol = state.model.createSol()
 
     # Identify variables that contribute least to the objective function
     ones = [(var, var.getObj()) for var in vars if var.getLbLocal() != var.getUbLocal()]
@@ -49,28 +54,33 @@ def worse_remove(state: StateSCIP, rnd_state) -> StateSCIP:
     for var in to_remove:
         if var.getLbLocal() == 0:  # Check if variable cannot be set to zero
             continue
-        state.model.fixVar(var, 0.0)  # Fix variable to 0 in the solution
+        state.model.setSolVal(sol, var, 0)
 
-    return StateSCIP(state.model)
+    return sol
 
 
-def random_repair(state: StateSCIP, rnd_state) -> StateSCIP:
+def random_repair(state: StateSCIP, rnd_state):
     # Copy the model's variables
     vars = state.model.getVars()
 
     # If there is no solution, we cannot repair anything
     if vars is None or len(vars) == 0:
-        return state
+        return state.model.createSol()
 
-    zeros = [var for var in vars if var.getLbLocal() != var.getUbLocal() and state.model.getSolVal(None, var) == 0]
+    # Create a new SCIP solution
+    sol = state.model.createSol()
 
-    # Randomly choose a variable from the zeros list
-    chosen_var = rnd_state.choice(zeros)
+    zeros = [var for var in vars if var.getLbLocal() != var.getUbLocal() and
+             state.model.getSolVal(state.model.getSols(), var) == 0]
 
-    # Set the chosen variable to 1 in the solution
-    state.model.setSolVal(None, chosen_var, 1.0)
+    if len(zeros) > 0:
+        # Randomly choose a variable from the zeros list
+        chosen_var = rnd_state.choice(zeros)
 
-    return StateSCIP(state.model)
+        # Set the chosen variable to 1 in the solution
+        state.model.setSolVal(sol, chosen_var, 1.0)
+
+    return sol
 
 
 def read_mps(file_path):
@@ -101,7 +111,10 @@ def init_sol(model):
         model.chgVarType(var, 'CONTINUOUS')
     model.optimize()
 
-    # Record LP solutio
+    # if model.getStatus() == "optimal":
+    #     print("initial model optimized")
+
+    # Record LP solution
     x_star = {var.name: model.getVal(var) for var in original_vars}
 
     # Round x_star to obtain x_tilda
@@ -143,48 +156,37 @@ def run_banditalns(instance_path):
         logger.error("failed to initialize solution within time limit")
         return
 
+    # StateSCIP.get_context = StateSCIP.get_mip_context
+    ContextualState.get_context = StateSCIP.get_context
+    print("get context assigned")
 
-    StateSCIP.get_context = StateSCIP.get_mip_context
 
     op_select = MABSelector(
         scores=MIPConfig.scores,
         num_destroy=MIPConfig.num_destroy,
         num_repair=MIPConfig.num_repair,
-        learning_policy=LearningPolicy.LinGreedy(epsilon=0.15),
+        # learning_policy=LearningPolicy.LinGreedy(epsilon=0.15),
+        learning_policy=LearningPolicy.LinUCB(alpha=1.25, l2_lambda=1),
         neighborhood_policy=None)
 
-    stop = MaxIterations(50)
+    stop = MaxIterations(1000)
     accept = HillClimbing()
 
-    res = alns.iterate(initial_sol, op_select, accept, stop)
-    print(f"found solution with objective {res.best_state.objective()}.")
 
-    _, ax = plt.subplots(figsize=(12, 6))
-    res.plot_objectives(ax=ax, lw=2)
+    best_objective = float('inf')
+
+    for i in range(stop.max_iterations):
+        result = alns.iterate(initial_sol, op_select, accept, stop)
+        print("alns is run")
+        state = result.best_state
+
+        if state.objective() < best_objective:
+            best_objective = state.objective()
+    print(f"Found solution with objective {best_objective}.")
 
 
 if __name__ == "__main__":
-    instance_path = "C:/Users/a739095/Streamfolder/New_Forked_ALNS_CMAB_MIP/ALNSBandit_MIP/data/gen-ip002.mps.gz"
+    instance_path = "C:/Users/a739095/Streamfolder/New_Forked_ALNS_CMAB_MIP/ALNSBandit_MIP/data/" \
+                    "noswot.mps.gz"
     # Create MIP instance
     run_banditalns(instance_path)
-
-# # We'll need to keep track of the best and current states
-#     best_state = current_state = initial_sol
-#     iterations = 0
-#
-#     # Here, we directly call stop as a callable in the while condition
-#     while not stop(random_state, best_state, current_state):
-#         # apply the operators to get a new candidate solution and score
-#         candidate_state, destroy_idx, repair_idx, score = alns.iterate(current_state, op_select, accept,
-#                                                                        stop)
-#
-#         # update MABSelector with the candidate solution, the operators used, and the outcome
-#         outcome = MIPConfig.scores.index(score) if score in MIPConfig.scores else len(MIPConfig.scores)
-#         op_select.update(candidate_state, destroy_idx, repair_idx, outcome)
-#
-#         # Update the current and best states
-#         current_state = candidate_state
-#         if current_state.score > best_state.score:
-#             best_state = current_state
-#
-#         iterations += 1

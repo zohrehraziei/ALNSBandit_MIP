@@ -29,12 +29,13 @@ class ContextualState(State, Protocol):
         """
 
 
-class StateSCIP:
+class StateSCIP(scip.Model, ContextualState):
     """
     Solution class for the MIP problem implemented using SCIP.
     """
 
     def __init__(self, model):
+        super().__init__()
         self.model = model
 
     def objective(self) -> float:
@@ -46,11 +47,12 @@ class StateSCIP:
         else:
             return float('nan')
 
-    def get_mip_context(self) -> np.ndarray:
+    def get_context(self) -> np.ndarray:
         """
         Computes a context vector for the current solution.
         Here you can extract relevant features or information from the SCIP model to form the context.
         """
+        print("Extarcting context MIP")
         # Extract variable features
         varbls = self.model.getVars()
         var_types = [v.vtype() for v in varbls]
@@ -97,7 +99,8 @@ class StateSCIP:
         for i, (lhs, rhs, coef) in enumerate(constraint_data):
             lhss[i, :len(lhs)] = lhs
             rhss[i, :len(rhs)] = rhs
-            cons_coefs[i, :len(coef)] = coef
+            cons_coefs[i, :len(coef)] = [val if isinstance(val, (int, float)) else 0 for val in coef]
+            # cons_coefs[i, :len(coef)] = coef
 
         constraint_features = DataFrame({
             'lhs': lhss.flatten(),
@@ -113,6 +116,6 @@ class StateSCIP:
         context_features.fillna(0, inplace=True)
 
         # Convert to numpy array
-        context = context_features.values
+        context = context_features.values.reshape(1, -1)
 
         return context

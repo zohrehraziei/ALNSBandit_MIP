@@ -129,15 +129,17 @@ class MABSelector(OperatorSelectionScheme):
         best: ContextualState,
         curr: ContextualState,
     ) -> Tuple[int, int]:
+        self._mab._is_initial_fit = True
         """
         Returns the (destroy, repair) operator pair from the underlying MAB
         strategy
         """
         if self._mab._is_initial_fit:
             has_ctx = self._mab.is_contextual
-            ctx = np.atleast_2d(curr.get_context()) if has_ctx else None
-            prediction = self._mab.predict(contexts=ctx)
-            return arm2ops(prediction)
+            if has_ctx:
+                ctx = np.atleast_2d(curr.get_context())
+                prediction = self._mab.predict(contexts=ctx)
+                return arm2ops(prediction)
         else:
             # This can happen when the MAB object has not yet been fit on any
             # observations. In that case we return any feasible operator index
