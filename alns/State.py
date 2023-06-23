@@ -47,6 +47,7 @@ class StateSCIP(scip.Model, ContextualState):
         else:
             return float('nan')
 
+    # use getSolObjVal
     def get_context(self) -> np.ndarray:
         """
         Computes a context vector for the current solution.
@@ -100,7 +101,6 @@ class StateSCIP(scip.Model, ContextualState):
             lhss[i, :len(lhs)] = lhs
             rhss[i, :len(rhs)] = rhs
             cons_coefs[i, :len(coef)] = [val if isinstance(val, (int, float)) else 0 for val in coef]
-            # cons_coefs[i, :len(coef)] = coef
 
         constraint_features = DataFrame({
             'lhs': lhss.flatten(),
@@ -112,7 +112,7 @@ class StateSCIP(scip.Model, ContextualState):
 
         # Concatenate variable and constraint features
         context_features = DataFrame(variable_features)
-        context_features = context_features.join(constraint_features, how='outer')
+        # context_features = context_features.join(constraint_features, how='outer')
         context_features.fillna(0, inplace=True)
 
         # Convert to numpy array

@@ -129,7 +129,7 @@ class MABSelector(OperatorSelectionScheme):
         best: ContextualState,
         curr: ContextualState,
     ) -> Tuple[int, int]:
-        self._mab._is_initial_fit = True
+        # self._mab._is_initial_fit = True
         """
         Returns the (destroy, repair) operator pair from the underlying MAB
         strategy
